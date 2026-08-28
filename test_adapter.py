@@ -22,11 +22,12 @@ def make_adapter():
         rule_rationale_map={"rule-deny-ext-write": "rat-001"},
         bounds_store={"risk-001": BOUND},
         monitoring_plan=PLAN,
+        window_size=50,
     )
 
-def ev(decision, rule_id="rule-deny-ext-write", action="https://ext.io/x"):
+def ev(decision, rule_id="rule-deny-ext-write", action="https://ext.io/x", task_id=None, seq=None):
     return AuthorizationEvent(agent_id="agent-a", tool_name="write_file",
-        action=action, rule_id=rule_id, decision=decision)
+        action=action, rule_id=rule_id, decision=decision, task_id=task_id, sequence_id=seq)
 
 def flat(bundle, flags=None):
     link=bundle["c1_risk_link"]; mit=bundle["c2_mitigation"]; res=bundle["c3_residual_risk"]
@@ -38,7 +39,8 @@ def flat(bundle, flags=None):
             "decision":res.decision.value,"residual_risk":res.post_decision_risk.value,
             "acceptability_status":sm[res.acceptability_status],
             "evidence_links":["Art. 9(2)(a)","Art. 9(2)(d)","Art. 9(5)"],
-            "unlinked_rule":link.unlinked,"flags":flags or []}
+            "unlinked_rule":link.unlinked,"flags":flags or [],
+            "task_id":link.event_id[:8],"sequence_id":None}
 
 PASS=FAIL=0
 def check(name, fn):

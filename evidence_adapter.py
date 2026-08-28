@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections import deque
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -30,6 +31,8 @@ class AuthorizationEvent(BaseModel):
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str; tool_name: str; action: str; rule_id: str
     decision: Decision; timestamp: datetime = Field(default_factory=_now)
+    task_id: Optional[str] = None
+    sequence_id: Optional[int] = None
     raw_payload: Optional[dict] = None
 
 class RiskRegisterEntry(BaseModel):
@@ -100,11 +103,12 @@ class EvidenceAdapter:
     """Translation layer: security plane -> Article 9 compliance plane.
     Does not modify decisions. Does not make acceptability determinations."""
     def __init__(self, risk_register, rule_risk_mapping, rationale_store,
-                 rule_rationale_map, bounds_store, monitoring_plan):
+                 rule_rationale_map, bounds_store, monitoring_plan, window_size: int = 50):
         self.risk_register = risk_register; self.rule_risk_mapping = rule_risk_mapping
         self.rationale_store = rationale_store; self.rule_rationale_map = rule_rationale_map
         self.bounds_store = bounds_store; self.monitoring_plan = monitoring_plan
-        self._deny: dict[str,int] = {}; self._allow: dict[str,int] = {}
+        self.window_size = window_size
+        self._windows: dict[str, deque] = {}
 
     def link_risk(self, event):
         rid = self.rule_risk_mapping.get(event.rule_id)
@@ -125,20 +129,21 @@ class EvidenceAdapter:
         post = ResidualRiskState.REDUCED if event.decision == Decision.DENY else ResidualRiskState.NOT_ELIMINATED
         within = None
         if b and b.max_deny_rate is not None:
-            d = self._deny.get(link.risk_id,0); a = self._allow.get(link.risk_id,0)
-            within = (d/(d+a) if d+a else 0.0) <= b.max_deny_rate
+            within = self._deny_rate(link.risk_id) <= b.max_deny_rate
         return ResidualRiskRecord(event_id=event.event_id, risk_id=link.risk_id,
             decision=event.decision, post_decision_risk=post,
             acceptability_bound_id=b.bound_id if b else None, within_bound=within)
 
     def ingest(self, event, link):
         r = link.risk_id
-        if event.decision == Decision.DENY: self._deny[r] = self._deny.get(r,0)+1
-        else: self._allow[r] = self._allow.get(r,0)+1
+        if r not in self._windows:
+            self._windows[r] = deque(maxlen=self.window_size)
+        self._windows[r].append(event.decision)
 
     def generate_pattern_report(self, risk_id, period_start, period_end,
                                  anomaly_flags=None, emerging_patterns=None):
-        d=self._deny.get(risk_id,0); a=self._allow.get(risk_id,0); t=d+a
+        w = self._windows.get(risk_id, deque())
+        t = len(w); d = sum(1 for x in w if x == Decision.DENY)
         return PatternReport(risk_id=risk_id, period_start=period_start, period_end=period_end,
             event_count=t, deny_rate=d/t if t else 0.0, near_miss_count=0,
             anomaly_flags=anomaly_flags or [], emerging_patterns=emerging_patterns or [],
