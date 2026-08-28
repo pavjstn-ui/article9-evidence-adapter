@@ -126,7 +126,7 @@ class EvidenceAdapter:
         within = None
         if b and b.max_deny_rate is not None:
             d = self._deny.get(link.risk_id,0); a = self._allow.get(link.risk_id,0)
-            within = (d/(d+a) if d+a else 0.0) >= b.max_deny_rate
+            within = (d/(d+a) if d+a else 0.0) <= b.max_deny_rate
         return ResidualRiskRecord(event_id=event.event_id, risk_id=link.risk_id,
             decision=event.decision, post_decision_risk=post,
             acceptability_bound_id=b.bound_id if b else None, within_bound=within)
