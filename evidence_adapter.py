@@ -140,6 +140,11 @@ class EvidenceAdapter:
             self._windows[r] = deque(maxlen=self.window_size)
         self._windows[r].append(event.decision)
 
+    def _deny_rate(self, risk_id: str) -> float:
+        w = self._windows.get(risk_id, deque())
+        t = len(w)
+        return sum(1 for x in w if x == Decision.DENY) / t if t else 0.0
+
     def generate_pattern_report(self, risk_id, period_start, period_end,
                                  anomaly_flags=None, emerging_patterns=None):
         w = self._windows.get(risk_id, deque())
